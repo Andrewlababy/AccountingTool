@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Camera, FileText, DollarSign, Calendar, Tag, Save, Download, Trash2, Edit3, BarChart3, TrendingUp, PieChart, Calculator } from 'lucide-react';
+import QianwenOCR from '../services/qianwenOCR';
 
 const InvoiceOCRBookkeeping = () => {
   const [entries, setEntries] = useState([]);
@@ -22,6 +23,9 @@ const InvoiceOCRBookkeeping = () => {
     endDate: new Date().toISOString().split('T')[0]
   });
   const fileInputRef = useRef(null);
+  
+  // Initialize QianwenOCR service
+  const qianwenOCR = new QianwenOCR();
 
   // 香港常見支出類別
   const categories = [
@@ -69,21 +73,43 @@ const InvoiceOCRBookkeeping = () => {
 
     setIsProcessing(true);
     
-    setTimeout(() => {
-      const extractedData = simulateOCR();
-      setOcrText(`識別結果：
+    try {
+      let extractedData;
+      let ocrSource = 'Mock OCR';
+      
+      // Try to use Qianwen OCR if available
+      if (qianwenOCR.isAvailable) {
+        try {
+          ocrSource = 'Qianwen OCR API';
+          extractedData = await qianwenOCR.extractInvoiceData(file);
+        } catch (error) {
+          console.warn('Qianwen OCR failed, falling back to mock OCR:', error);
+          ocrSource = 'Mock OCR (Qianwen failed)';
+          extractedData = simulateOCR();
+        }
+      } else {
+        // Fallback to mock OCR
+        extractedData = simulateOCR();
+      }
+      
+      setOcrText(`識別結果 (${ocrSource})：
 商戶：${extractedData.vendor}
 金額：HK$${extractedData.amount}
 日期：${extractedData.date}
 描述：${extractedData.description}
-類別：${extractedData.category}`);
+類別：${extractedData.category}${extractedData.gstAmount && parseFloat(extractedData.gstAmount) > 0 ? `
+GST金額：HK$${extractedData.gstAmount}` : ''}`);
       
       setCurrentEntry(prev => ({
         ...prev,
         ...extractedData
       }));
+    } catch (error) {
+      console.error('OCR processing error:', error);
+      setOcrText(`識別失敗：${error.message}`);
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
   const handleAddEntry = () => {
@@ -402,6 +428,14 @@ const InvoiceOCRBookkeeping = () => {
                   <p className="text-sm text-gray-500 mt-2">
                     支援餐廳收據、商店發票、服務單據等
                   </p>
+                  
+                  {/* OCR Status Indicator */}
+                  <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${qianwenOCR.isAvailable ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                    <span className={qianwenOCR.isAvailable ? 'text-green-600' : 'text-yellow-600'}>
+                      {qianwenOCR.isAvailable ? 'Qianwen OCR 已啟用' : 'Mock OCR (設置REACT_APP_DASHSCOPE_API_KEY啟用Qianwen OCR)'}
+                    </span>
+                  </div>
                 </div>
 
                 {ocrText && (
